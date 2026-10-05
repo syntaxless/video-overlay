@@ -13,6 +13,8 @@ describe.skipIf(files.length === 0)('GoPro sample files', () => {
     test(f, async () => {
       const telemetry = await readGoProTelemetry(await openAsBlob(join(dir!, f)))
       if (!telemetry) return // clip recorded without a GPS lock
+      // GPS time is UTC from the satellites, so it must be a sane date.
+      expect(telemetry.startTime).toBeGreaterThan(Date.UTC(2015, 0, 1) / 1000)
       const { samples } = telemetry
       expect(samples.length).toBeGreaterThan(0)
       for (let i = 1; i < samples.length; i++) expect(samples[i].t).toBeGreaterThanOrEqual(samples[i - 1].t)

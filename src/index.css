@@ -53,3 +53,6 @@ select, input[type='number'] {
 }
 input[type='number'] { width: 6em; }
 .offset { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.widgets { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 0 0 16px; }
+.widgets label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.widgets .unavailable { opacity: 0.45; cursor: default; }

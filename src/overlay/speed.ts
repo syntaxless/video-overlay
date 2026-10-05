@@ -11,7 +11,8 @@ export interface SpeedStyle {
 const MPS_TO: Record<SpeedUnit, number> = { mph: 2.2369363, kmh: 3.6 }
 const LABEL: Record<SpeedUnit, string> = { mph: 'MPH', kmh: 'KM/H' }
 
-export type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
+import type { Ctx } from './common'
+export type { Ctx }
 
 const START = Math.PI * 0.75
 const SWEEP = Math.PI * 1.5

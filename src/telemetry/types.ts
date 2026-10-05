@@ -13,15 +13,22 @@ export interface Sample {
   throttle?: number
   /** Brake pressure or pedal position, 0 to 100. */
   brake?: number
+  /**
+   * Direction of travel in degrees clockwise from north. Unwrapped (it can go
+   * past 360 or below 0) so it interpolates smoothly; take it modulo 360 to show it.
+   */
+  heading?: number
 }
 
 export interface Telemetry {
   source: string
   samples: Sample[]
+  /** UTC time of t = 0 in epoch seconds, when known. */
+  startTime?: number
 }
 
 export type Channel = Exclude<keyof Sample, 't'>
-export const CHANNELS: Channel[] = ['lat', 'lon', 'alt', 'speed', 'rpm', 'throttle', 'brake']
+export const CHANNELS: Channel[] = ['lat', 'lon', 'alt', 'speed', 'rpm', 'throttle', 'brake', 'heading']
 
 /** Returns the reading at time t, linearly interpolated between the nearest samples. */
 export function sampleAt(telemetry: Telemetry, t: number): Sample | undefined {

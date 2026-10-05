@@ -13,6 +13,8 @@ export interface GpsFix {
 
 export interface GpmfPayload {
   gps: GpsFix[]
+  /** UTC time of the first GPS fix in this payload, in epoch seconds, when the camera had a fix. */
+  gpsTime?: number
   /** Accelerometer readings in m/s², as reported by the camera ([axis0, axis1, axis2]). */
   accel: [number, number, number][]
 }
@@ -105,6 +107,16 @@ function readRows(view: DataView, k: Klv, scal: number[], typeDef: string | unde
   return rows
 }
 
+const GPS9_EPOCH = Date.UTC(2000, 0, 1) / 1000
+
+/** Parses GPSU, a UTC timestamp written as "yymmddhhmmss.sss". */
+function parseGpsu(text: string): number | undefined {
+  const m = text.match(/^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2}(?:\.\d+)?)/)
+  if (!m) return undefined
+  const [, yy, mo, dd, hh, mi, ss] = m
+  return Date.UTC(2000 + Number(yy), Number(mo) - 1, Number(dd), Number(hh), Number(mi)) / 1000 + Number(ss)
+}
+
 /** Parses one gpmd sample (usually one second of telemetry). */
 export function parseGpmf(view: DataView): GpmfPayload {
   const result: GpmfPayload = { gps: [], accel: [] }
@@ -119,6 +131,7 @@ export function parseGpmf(view: DataView): GpmfPayload {
         if (k.key === 'SCAL') scal = readNumbers(view, k)
         else if (k.key === 'TYPE') typeDef = readString(view, k)
         else if (k.key === 'GPSF') gpsFix = readNumber(view, k.type, k.dataStart)
+        else if (k.key === 'GPSU') result.gpsTime ??= parseGpsu(readString(view, k))
         else if (k.key === 'GPS5') {
           if (gpsFix < 2) continue
           for (const [lat, lon, alt, speed] of readRows(view, k, scal, typeDef)) {
@@ -128,6 +141,8 @@ export function parseGpmf(view: DataView): GpmfPayload {
           // lat, lon, alt, 2D speed, 3D speed, days, secs, DOP, fix
           for (const row of readRows(view, k, scal, typeDef)) {
             if ((row[8] ?? 3) < 2) continue
+            // Days since 2000-01-01 and seconds since midnight, UTC.
+            result.gpsTime ??= GPS9_EPOCH + row[5] * 86400 + row[6]
             result.gps.push({ lat: row[0], lon: row[1], alt: row[2], speed: row[3] })
           }
         } else if (k.key === 'ACCL') {

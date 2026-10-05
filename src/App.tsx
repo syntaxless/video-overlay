@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { readGoProTelemetry } from './telemetry/gopro'
 import { readCsvTelemetry, toTelemetry, type LogTable, type Mapping } from './telemetry/csv'
 import { findOffset, type SyncResult } from './telemetry/sync'
-import { buildTimeline } from './telemetry/timeline'
+import { buildTimeline, type Extras } from './telemetry/timeline'
+import { fetchAltitudeOffset, fetchWeather } from './telemetry/openmeteo'
 import type { Channel, Telemetry } from './telemetry/types'
-import { defaultPedals, drawOverlay, type OverlayStyle } from './overlay/overlay'
+import { availableWidgets, defaultPedals, drawOverlay, type OverlayStyle, type Widgets } from './overlay/overlay'
 import type { SpeedUnit } from './overlay/speed'
 
 const MAX_SPEED: Record<SpeedUnit, number> = { mph: 140, kmh: 220 }
@@ -31,6 +32,17 @@ const MAPPED: { key: 'time' | Channel; label: string }[] = [
   { key: 'brake', label: 'Brake' },
 ]
 
+const WIDGET_LABELS: { key: keyof Widgets; label: string }[] = [
+  { key: 'speed', label: 'Speed' },
+  { key: 'pedals', label: 'RPM, throttle & brake' },
+  { key: 'map', label: 'Route map' },
+  { key: 'elevation', label: 'Elevation' },
+  { key: 'compass', label: 'Compass' },
+  { key: 'weather', label: 'Weather' },
+]
+
+const hasGps = (t?: Telemetry) => !!t?.samples.some((s) => s.lat !== undefined && s.lon !== undefined)
+
 /** A match below this correlation is probably wrong; we say so instead of trusting it. */
 const GOOD_SYNC = 0.8
 
@@ -43,15 +55,37 @@ export default function App() {
   const [sync, setSync] = useState<SyncResult>()
   const [unit, setUnit] = useState<SpeedUnit>('mph')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const [fetched, setFetched] = useState<{ source: Telemetry; extras: Extras }>()
+  const [hidden, setHidden] = useState<Set<keyof Widgets>>(new Set())
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const abortRef = useRef<AbortController>(undefined)
 
-  const timeline = useMemo(() => buildTimeline(gopro, log?.telemetry, offset), [gopro, log, offset])
-  const style: OverlayStyle = useMemo(
-    () => ({ speed: { unit, max: MAX_SPEED[unit] }, pedals: defaultPedals(timeline) }),
-    [unit, timeline],
-  )
+  // Weather and terrain height for the route, looked up once per GPS source.
+  const gpsSource = hasGps(gopro) ? gopro : hasGps(log?.telemetry) ? log!.telemetry : undefined
+  const extras = useMemo(() => (fetched && fetched.source === gpsSource ? fetched.extras : {}), [fetched, gpsSource])
+  useEffect(() => {
+    if (!gpsSource) return
+    let cancelled = false
+    Promise.all([
+      fetchWeather(gpsSource).catch(() => undefined),
+      fetchAltitudeOffset(gpsSource).catch(() => undefined),
+    ]).then(([weather, altitudeOffset]) => {
+      if (!cancelled) setFetched({ source: gpsSource, extras: { weather, altitudeOffset } })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [gpsSource])
+
+  const timeline = useMemo(() => buildTimeline(gopro, log?.telemetry, offset, extras), [gopro, log, offset, extras])
+  const available = useMemo(() => availableWidgets(timeline), [timeline])
+  const style: OverlayStyle = useMemo(() => {
+    const widgets = { ...available }
+    for (const k of hidden) widgets[k] = false
+    return { speed: { unit, max: MAX_SPEED[unit] }, pedals: defaultPedals(timeline), widgets }
+  }, [unit, timeline, available, hidden])
+
 
   function autoSync(video: Telemetry | undefined, logTelemetry: Telemetry) {
     const result = video ? findOffset(video, logTelemetry) : undefined
@@ -111,7 +145,7 @@ export default function App() {
         canvas.height = video.videoHeight
       }
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      drawOverlay(ctx, canvas.height, timeline, video.currentTime, style)
+      drawOverlay(ctx, canvas.width, canvas.height, timeline, video.currentTime, style)
       handle = video.requestVideoFrameCallback(draw)
     }
     draw()
@@ -207,6 +241,30 @@ export default function App() {
         {exporting && `Exporting… ${Math.round(status.progress * 100)}%`}
         {status.kind === 'error' && <span className="error">{status.message}</span>}
       </p>
+
+      {file && (
+        <section className="widgets" aria-label="Widgets">
+          <span className="muted">Show:</span>
+          {WIDGET_LABELS.map(({ key, label }) => (
+            <label key={key} className={available[key] ? '' : 'unavailable'} title={available[key] ? undefined : 'No data for this yet'}>
+              <input
+                type="checkbox"
+                disabled={!available[key]}
+                checked={style.widgets[key]}
+                onChange={(e) =>
+                  setHidden((h) => {
+                    const next = new Set(h)
+                    if (e.target.checked) next.delete(key)
+                    else next.add(key)
+                    return next
+                  })
+                }
+              />
+              {label}
+            </label>
+          ))}
+        </section>
+      )}
 
       {log && (
         <section className="panel">

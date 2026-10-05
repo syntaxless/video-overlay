@@ -167,11 +167,13 @@ export function toTelemetry(table: LogTable, mapping: Mapping, source: string): 
   }
   samples.sort((a, b) => a.t - b.t)
   fillGaps(samples)
+  // Absolute times (epoch or dates) let us look up the weather for the drive.
+  const startTime = t0 !== undefined && t0 > 1e8 ? t0 : undefined
   // Brake columns are often on/off switches (0/1); show those as 0 or 100%.
   if (mapping.brake !== undefined && samples.every((s) => s.brake === undefined || s.brake <= 1)) {
     for (const s of samples) if (s.brake !== undefined) s.brake *= 100
   }
-  return { source, samples }
+  return { source, samples, startTime }
 }
 
 /** Longest gap (s) bridged by interpolation; longer gaps mean the logger lost the reading. */

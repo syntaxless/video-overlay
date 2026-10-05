@@ -1,14 +1,28 @@
 import { readingAt, type Timeline } from '../telemetry/timeline'
 import { hasChannel } from '../telemetry/types'
+import type { Ctx, Units } from './common'
+import { drawElevation } from './elevation'
+import { drawInfo } from './info'
 import { drawPedals, type PedalOptions } from './pedals'
-import { drawSpeed, type Ctx, type SpeedStyle } from './speed'
+import { drawRoute } from './route'
+import { drawSpeed, type SpeedStyle } from './speed'
+
+export interface Widgets {
+  speed: boolean
+  pedals: boolean
+  elevation: boolean
+  weather: boolean
+  compass: boolean
+  map: boolean
+}
 
 export interface OverlayStyle {
   speed: SpeedStyle
   pedals: PedalOptions
+  widgets: Widgets
 }
 
-/** Decides which widgets to show from the data that's available. */
+/** Decides which pedal bars to show from the data that's available. */
 export function defaultPedals(timeline: Timeline): PedalOptions {
   const measuredBrake = hasChannel(timeline.video, 'brake') || hasChannel(timeline.log, 'brake')
   return {
@@ -19,9 +33,27 @@ export function defaultPedals(timeline: Timeline): PedalOptions {
   }
 }
 
-/** Draws every widget for video time t. Shared by the live preview and the export. */
-export function drawOverlay(ctx: Ctx, height: number, timeline: Timeline, t: number, style: OverlayStyle) {
+/** Which widgets have data to show. */
+export function availableWidgets(timeline: Timeline): Widgets {
+  const p = defaultPedals(timeline)
+  return {
+    speed: true,
+    pedals: p.throttle || p.brake || p.rpm,
+    elevation: hasChannel(timeline.route, 'alt'),
+    weather: !!timeline.weather,
+    compass: hasChannel(timeline.route, 'heading'),
+    map: !!timeline.route,
+  }
+}
+
+/** Draws every enabled widget for video time t. Shared by the live preview and the export. */
+export function drawOverlay(ctx: Ctx, width: number, height: number, timeline: Timeline, t: number, style: OverlayStyle) {
   const reading = readingAt(timeline, t)
-  drawSpeed(ctx, height, reading, style.speed)
-  drawPedals(ctx, height, reading, style.pedals)
+  const units: Units = style.speed.unit === 'mph' ? 'imperial' : 'metric'
+  const w = style.widgets
+  if (w.speed) drawSpeed(ctx, height, reading, style.speed)
+  if (w.pedals) drawPedals(ctx, height, reading, style.pedals)
+  if (w.compass || w.weather) drawInfo(ctx, height, reading.heading, timeline.weather, units, { compass: w.compass, weather: w.weather })
+  if (w.map && timeline.route) drawRoute(ctx, width, height, timeline.route, t)
+  if (w.elevation && timeline.route) drawElevation(ctx, width, height, timeline.route, reading.alt, t, units)
 }
