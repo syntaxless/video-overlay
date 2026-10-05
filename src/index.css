@@ -42,3 +42,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 .stage { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
 .stage video { display: block; width: 100%; height: auto; }
 .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+h2 { margin: 0 0 4px; font-size: 1.1rem; }
+h3 { margin: 16px 0 4px; font-size: 1rem; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 0 0 16px; }
+.mapping { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.mapping label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); min-width: 0; }
+select, input[type='number'] {
+  font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--fg); max-width: 100%;
+}
+input[type='number'] { width: 6em; }
+.offset { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
