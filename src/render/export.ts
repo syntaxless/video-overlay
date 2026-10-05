@@ -59,7 +59,7 @@ export async function exportWithOverlay(opts: ExportOptions): Promise<Blob | und
           ctx = canvas.getContext('2d')!
         }
         sample.draw(ctx!, 0, 0, canvas.width, canvas.height)
-        drawOverlay(ctx!, canvas.height, opts.timeline, sample.timestamp, opts.style)
+        drawOverlay(ctx!, canvas.width, canvas.height, opts.timeline, sample.timestamp, opts.style)
         return canvas
       },
     },

@@ -11,12 +11,14 @@ export async function readGoProTelemetry(file: Blob): Promise<Telemetry | undefi
   const meta = await findGpmdSamples(file)
   if (meta.length === 0) return undefined
   const samples: Sample[] = []
+  let startTime: number | undefined
   for (const m of meta) {
-    const { gps } = parseGpmf(await readSample(file, m))
+    const { gps, gpsTime } = parseGpmf(await readSample(file, m))
+    if (startTime === undefined && gpsTime !== undefined && gps.length > 0) startTime = gpsTime - m.time
     gps.forEach((fix, i) => {
       samples.push({ t: m.time + (m.duration * i) / gps.length, ...fix })
     })
   }
   if (samples.length === 0) return undefined
-  return { source: 'GoPro GPS', samples }
+  return { source: 'GoPro GPS', samples, startTime }
 }

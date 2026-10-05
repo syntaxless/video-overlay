@@ -1,3 +1,5 @@
+import { deriveGps } from './derive'
+import type { Weather } from './openmeteo'
 import { CHANNELS, sampleAt, type Sample, type Telemetry } from './types'
 
 /** Braking starts to show above this deceleration (m/s²); lifting off the throttle alone is usually below it. */
@@ -35,13 +37,27 @@ export interface Timeline {
   offset: number
   /** Brake estimated from deceleration, used when no brake channel exists. */
   brakeEstimate?: Telemetry
+  /** Route on video time: position, smoothed altitude and heading. */
+  route?: Telemetry
+  weather?: Weather
+}
+
+export interface Extras {
+  weather?: Weather
+  /** Metres added to GPS altitude to match terrain height. */
+  altitudeOffset?: number
 }
 
 /**
  * Builds the timeline. The log's speed wins over GPS because OBD speed is
  * smoother; position and altitude come from the video's GPS.
  */
-export function buildTimeline(video: Telemetry | undefined, log: Telemetry | undefined, offset: number): Timeline {
+export function buildTimeline(
+  video: Telemetry | undefined,
+  log: Telemetry | undefined,
+  offset: number,
+  extras: Extras = {},
+): Timeline {
   const hasBrake = [video, log].some((t) => t?.samples.some((s) => s.brake !== undefined))
   let brakeEstimate: Telemetry | undefined
   if (!hasBrake) {
@@ -53,7 +69,18 @@ export function buildTimeline(video: Telemetry | undefined, log: Telemetry | und
         source === log ? { ...est, samples: est.samples.map((s) => ({ ...s, t: s.t + offset })) } : est
     }
   }
-  return { video, log, offset, brakeEstimate }
+  return { video, log, offset, brakeEstimate, route: buildRoute(video, log, offset, extras.altitudeOffset), weather: extras.weather }
+}
+
+/** The GPS track on video time, from the video if it has GPS, otherwise from the log. */
+function buildRoute(video: Telemetry | undefined, log: Telemetry | undefined, offset: number, altitudeOffset = 0) {
+  const hasGps = (t?: Telemetry) => !!t?.samples.some((s) => s.lat !== undefined && s.lon !== undefined)
+  if (hasGps(video)) return deriveGps(video!, altitudeOffset)
+  if (hasGps(log)) {
+    const route = deriveGps(log!, altitudeOffset)
+    return { ...route, samples: route.samples.map((s) => ({ ...s, t: s.t + offset })) }
+  }
+  return undefined
 }
 
 /** Everything known at video time t. */
@@ -68,6 +95,15 @@ export function readingAt(timeline: Timeline, t: number): Sample {
     if (a !== undefined || b !== undefined) out[k] = a ?? b
   }
   if (out.brake === undefined && timeline.brakeEstimate) out.brake = sampleAt(timeline.brakeEstimate, t)?.brake
+  if (timeline.route) {
+    const r = sampleAt(timeline.route, t)
+    if (r) {
+      out.lat = r.lat
+      out.lon = r.lon
+      out.alt = r.alt ?? out.alt
+      out.heading = r.heading
+    }
+  }
   return out
 }
 
