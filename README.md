@@ -1,4 +1,4 @@
-# Video Overlay
+# Super Simple Video Overlay
 
 Add live data overlays (speed now; throttle, brake, RPM, elevation, weather and a route map next) to driving videos. Runs entirely in the browser: your footage is never uploaded.
 

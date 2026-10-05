@@ -100,7 +100,7 @@ export default function App() {
   return (
     <main>
       <header>
-        <h1>Video Overlay</h1>
+        <h1>Super Simple Video Overlay</h1>
         <p className="muted">Add a speed overlay to your GoPro footage. Everything runs in your browser; nothing is uploaded.</p>
       </header>
 
