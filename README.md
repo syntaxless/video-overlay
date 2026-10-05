@@ -5,7 +5,9 @@ Add live data overlays (speed now; throttle, brake, RPM, elevation, weather and 
 ## What works today
 
 - Open a GoPro MP4 (HERO5 and later, except HERO12, which has no GPS). The app reads the GPS telemetry embedded in the file.
-- Live preview with a speedometer in mph or km/h.
+- Add an OBD-II or data-logger CSV: Torque Pro, Car Scanner, OBD Fusion, RaceChrono, RaceBox or any CSV with a time column. Columns are detected automatically and can be changed.
+- The log is lined up with the video automatically by matching its speed against the GoPro's GPS speed, with buttons to nudge it by hand.
+- Live preview with a speedometer (mph or km/h), RPM, and throttle and brake bars. Most cars don't report brake over OBD-II, so when the log has no brake column, braking is estimated from how quickly you slow down (marked "est.").
 - Export an MP4 with the overlay burned in. Audio is kept. In Chrome and Edge the file is written straight to disk, so long 4K clips don't need to fit in memory.
 
 Best in Chrome or Edge. Other browsers may lack the video encoding support it needs.
@@ -30,15 +32,15 @@ GOPRO_SAMPLES=~/gopro-samples npm test
 
 - `src/telemetry/mp4.ts` finds GoPro's `gpmd` metadata track in the MP4 and reads only those bytes.
 - `src/telemetry/gpmf.ts` parses the GPMF telemetry (GPS5 and GPS9).
+- `src/telemetry/csv.ts` reads data-logger CSVs, `sync.ts` lines a log up with the video by correlating speed, and `timeline.ts` merges both sources and estimates braking.
 - `src/overlay/` holds the widgets. Each one is a plain function that draws on a canvas, so preview and export use the same code.
 - `src/render/export.ts` decodes, draws and re-encodes every frame with [Mediabunny](https://mediabunny.dev) and WebCodecs.
 
 ## Roadmap
 
-1. OBD-II CSV import (Car Scanner, Torque Pro, OBD Fusion, RaceChrono) with automatic sync to the GoPro speed.
-2. GPX / FIT / GPS-logger CSV import.
-3. Widgets: throttle, brake (from deceleration when the car doesn't report it), RPM, elevation, weather, compass, route map.
-4. Layout editor and presets.
+1. GPX / FIT import.
+2. Widgets: elevation, weather, compass, route map.
+3. Layout editor and presets.
 
 ## Licence
 

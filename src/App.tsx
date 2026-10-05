@@ -1,41 +1,101 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { readGoProTelemetry } from './telemetry/gopro'
-import { sampleAt, type Telemetry } from './telemetry/types'
-import { drawSpeed, type SpeedUnit } from './overlay/speed'
+import { readCsvTelemetry, toTelemetry, type LogTable, type Mapping } from './telemetry/csv'
+import { findOffset, type SyncResult } from './telemetry/sync'
+import { buildTimeline } from './telemetry/timeline'
+import type { Channel, Telemetry } from './telemetry/types'
+import { defaultPedals, drawOverlay, type OverlayStyle } from './overlay/overlay'
+import type { SpeedUnit } from './overlay/speed'
 
 const MAX_SPEED: Record<SpeedUnit, number> = { mph: 140, kmh: 220 }
 
 type Status =
   | { kind: 'idle' }
-  | { kind: 'loading' }
+  | { kind: 'loading'; what: string }
   | { kind: 'ready' }
   | { kind: 'exporting'; progress: number }
   | { kind: 'error'; message: string }
 
+interface Log {
+  name: string
+  table: LogTable
+  mapping: Mapping
+  telemetry: Telemetry
+}
+
+const MAPPED: { key: 'time' | Channel; label: string }[] = [
+  { key: 'time', label: 'Time' },
+  { key: 'speed', label: 'Speed' },
+  { key: 'rpm', label: 'RPM' },
+  { key: 'throttle', label: 'Throttle' },
+  { key: 'brake', label: 'Brake' },
+]
+
+/** A match below this correlation is probably wrong; we say so instead of trusting it. */
+const GOOD_SYNC = 0.8
+
 export default function App() {
   const [file, setFile] = useState<File>()
   const [url, setUrl] = useState<string>()
-  const [telemetry, setTelemetry] = useState<Telemetry>()
+  const [gopro, setGopro] = useState<Telemetry>()
+  const [log, setLog] = useState<Log>()
+  const [offset, setOffset] = useState(0)
+  const [sync, setSync] = useState<SyncResult>()
   const [unit, setUnit] = useState<SpeedUnit>('mph')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const abortRef = useRef<AbortController>(undefined)
 
-  async function openFile(f: File) {
+  const timeline = useMemo(() => buildTimeline(gopro, log?.telemetry, offset), [gopro, log, offset])
+  const style: OverlayStyle = useMemo(
+    () => ({ speed: { unit, max: MAX_SPEED[unit] }, pedals: defaultPedals(timeline) }),
+    [unit, timeline],
+  )
+
+  function autoSync(video: Telemetry | undefined, logTelemetry: Telemetry) {
+    const result = video ? findOffset(video, logTelemetry) : undefined
+    setSync(result)
+    if (result) setOffset(result.offset)
+  }
+
+  async function openVideo(f: File) {
     setFile(f)
     setUrl((old) => {
       if (old) URL.revokeObjectURL(old)
       return URL.createObjectURL(f)
     })
-    setTelemetry(undefined)
-    setStatus({ kind: 'loading' })
+    setGopro(undefined)
+    setStatus({ kind: 'loading', what: 'Reading GoPro telemetry…' })
     try {
-      setTelemetry(await readGoProTelemetry(f))
+      const t = await readGoProTelemetry(f)
+      setGopro(t)
+      if (log) autoSync(t, log.telemetry)
       setStatus({ kind: 'ready' })
     } catch (e) {
       setStatus({ kind: 'error', message: String((e as Error).message ?? e) })
     }
+  }
+
+  async function openLog(f: File) {
+    setStatus({ kind: 'loading', what: 'Reading data log…' })
+    try {
+      const { table, mapping, telemetry } = await readCsvTelemetry(f)
+      setLog({ name: f.name, table, mapping, telemetry })
+      setOffset(0)
+      autoSync(gopro, telemetry)
+      setStatus({ kind: 'ready' })
+    } catch (e) {
+      setStatus({ kind: 'error', message: `Couldn't read ${f.name}: ${String((e as Error).message ?? e)}` })
+    }
+  }
+
+  function remap(key: 'time' | Channel, column: number | undefined) {
+    if (!log) return
+    const mapping = { ...log.mapping, [key]: column } as Mapping
+    const telemetry = toTelemetry(log.table, mapping, log.name)
+    setLog({ ...log, mapping, telemetry })
+    if (key === 'time' || key === 'speed') autoSync(gopro, telemetry)
   }
 
   // Live preview: redraw the overlay on every presented video frame.
@@ -51,8 +111,7 @@ export default function App() {
         canvas.height = video.videoHeight
       }
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      const reading = telemetry ? sampleAt(telemetry, video.currentTime) : undefined
-      drawSpeed(ctx, canvas.height, reading, { unit, max: MAX_SPEED[unit] })
+      drawOverlay(ctx, canvas.height, timeline, video.currentTime, style)
       handle = video.requestVideoFrameCallback(draw)
     }
     draw()
@@ -63,7 +122,7 @@ export default function App() {
       video.removeEventListener('seeked', draw)
       video.removeEventListener('loadedmetadata', draw)
     }
-  }, [url, telemetry, unit])
+  }, [url, timeline, style])
 
   async function runExport() {
     if (!file) return
@@ -75,9 +134,8 @@ export default function App() {
       const { exportWithOverlay } = await import('./render/export')
       const blob = await exportWithOverlay({
         video: file,
-        telemetry,
-        speed: { unit, max: MAX_SPEED[unit] },
-        offset: 0,
+        timeline,
+        style,
         onProgress: (progress) => setStatus({ kind: 'exporting', progress }),
         signal: controller.signal,
       })
@@ -96,12 +154,15 @@ export default function App() {
   }
 
   const exporting = status.kind === 'exporting'
+  const busy = exporting || status.kind === 'loading'
 
   return (
     <main>
       <header>
         <h1>Super Simple Video Overlay</h1>
-        <p className="muted">Add a speed overlay to your GoPro footage. Everything runs in your browser; nothing is uploaded.</p>
+        <p className="muted">
+          Add speed, throttle and brake to your driving videos. Everything runs in your browser; nothing is uploaded.
+        </p>
       </header>
 
       <section className="controls">
@@ -111,7 +172,18 @@ export default function App() {
             type="file"
             accept="video/mp4,video/quicktime,.mp4,.mov"
             hidden
-            onChange={(e) => e.target.files?.[0] && openFile(e.target.files[0])}
+            disabled={busy}
+            onChange={(e) => e.target.files?.[0] && openVideo(e.target.files[0])}
+          />
+        </label>
+        <label className="button">
+          {log ? 'Change data log' : 'Add OBD / data log (CSV)'}
+          <input
+            type="file"
+            accept=".csv,.txt,text/csv"
+            hidden
+            disabled={busy}
+            onChange={(e) => e.target.files?.[0] && openLog(e.target.files[0])}
           />
         </label>
         <div className="segmented" role="group" aria-label="Speed unit">
@@ -121,20 +193,82 @@ export default function App() {
             </button>
           ))}
         </div>
-        <button className="primary" disabled={!file || exporting || status.kind === 'loading'} onClick={runExport}>
+        <button className="primary" disabled={!file || busy} onClick={runExport}>
           Export MP4
         </button>
         {exporting && <button onClick={() => abortRef.current?.abort()}>Cancel</button>}
       </section>
 
       <p className="status" aria-live="polite">
-        {status.kind === 'loading' && 'Reading telemetry…'}
-        {status.kind === 'ready' && file && (telemetry
-          ? `${telemetry.source}: ${telemetry.samples.length.toLocaleString()} readings.`
-          : 'No GoPro GPS found in this file. The video will export without speed data.')}
+        {status.kind === 'loading' && status.what}
+        {status.kind === 'ready' && file && (gopro
+          ? `GoPro GPS: ${gopro.samples.length.toLocaleString()} readings.`
+          : 'No GoPro GPS in this video.')}
         {exporting && `Exporting… ${Math.round(status.progress * 100)}%`}
         {status.kind === 'error' && <span className="error">{status.message}</span>}
       </p>
+
+      {log && (
+        <section className="panel">
+          <h2>{log.name}</h2>
+          <p className="muted">
+            {log.telemetry.samples.length.toLocaleString()} readings over{' '}
+            {formatDuration(log.telemetry.samples.at(-1)?.t ?? 0)}. Check the columns below match your data.
+          </p>
+          <div className="mapping">
+            {MAPPED.map(({ key, label }) => (
+              <label key={key}>
+                {label}
+                <select
+                  value={log.mapping[key] ?? ''}
+                  onChange={(e) => remap(key, e.target.value === '' ? undefined : Number(e.target.value))}
+                >
+                  {key !== 'time' && <option value="">None</option>}
+                  {log.table.headers.map((h, i) => (
+                    <option key={i} value={i}>
+                      {h || `Column ${i + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+
+          <h3>Sync</h3>
+          <p className="muted">
+            {sync && sync.score >= GOOD_SYNC &&
+              `Lined up automatically by matching speed (match ${Math.round(sync.score * 100)}%).`}
+            {sync && sync.score < GOOD_SYNC &&
+              `Best automatic match is weak (${Math.round(sync.score * 100)}%). Check the overlay against the video and adjust.`}
+            {!sync && (gopro
+              ? 'Couldn’t match the speed traces automatically. Set the offset by hand.'
+              : 'No GoPro GPS to match against. Set the offset by hand.')}
+          </p>
+          <div className="offset">
+            <span>Log starts at</span>
+            <button onClick={() => setOffset((o) => round1(o - 1))}>−1s</button>
+            <button onClick={() => setOffset((o) => round1(o - 0.1))}>−0.1s</button>
+            <input
+              type="number"
+              step={0.1}
+              value={offset}
+              onChange={(e) => setOffset(Number(e.target.value) || 0)}
+              aria-label="Offset in seconds"
+            />
+            <button onClick={() => setOffset((o) => round1(o + 0.1))}>+0.1s</button>
+            <button onClick={() => setOffset((o) => round1(o + 1))}>+1s</button>
+            <span className="muted">seconds into the video</span>
+            {gopro && (
+              <button onClick={() => autoSync(gopro, log.telemetry)}>Auto-sync</button>
+            )}
+          </div>
+          {style.pedals.brake && style.pedals.brakeEstimated && (
+            <p className="muted">
+              Your log has no brake data (most cars don’t report it over OBD-II), so braking is estimated from how fast you slow down.
+            </p>
+          )}
+        </section>
+      )}
 
       {url && (
         <div className="stage">
@@ -144,4 +278,12 @@ export default function App() {
       )}
     </main>
   )
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = Math.round(seconds % 60)
+  return m > 0 ? `${m} min ${s} s` : `${s} s`
 }

@@ -9,15 +9,13 @@ import {
   StreamTarget,
   type Target,
 } from 'mediabunny'
-import { drawSpeed, type SpeedStyle } from '../overlay/speed'
-import { sampleAt, type Telemetry } from '../telemetry/types'
+import { drawOverlay, type OverlayStyle } from '../overlay/overlay'
+import type { Timeline } from '../telemetry/timeline'
 
 export interface ExportOptions {
   video: File
-  telemetry: Telemetry | undefined
-  speed: SpeedStyle
-  /** Seconds added to video time before looking up telemetry. */
-  offset: number
+  timeline: Timeline
+  style: OverlayStyle
   onProgress: (fraction: number) => void
   signal: AbortSignal
 }
@@ -61,8 +59,7 @@ export async function exportWithOverlay(opts: ExportOptions): Promise<Blob | und
           ctx = canvas.getContext('2d')!
         }
         sample.draw(ctx!, 0, 0, canvas.width, canvas.height)
-        const reading = opts.telemetry ? sampleAt(opts.telemetry, sample.timestamp + opts.offset) : undefined
-        drawSpeed(ctx!, canvas.height, reading, opts.speed)
+        drawOverlay(ctx!, canvas.height, opts.timeline, sample.timestamp, opts.style)
         return canvas
       },
     },
