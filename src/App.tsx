@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { readGoProTelemetry } from './telemetry/gopro'
-import { readCsvTelemetry, toTelemetry, type LogTable, type Mapping } from './telemetry/csv'
+import { toTelemetry, type Mapping } from './telemetry/csv'
+import { readLog, type LoadedLog } from './telemetry/log'
 import { findOffset, type SyncResult } from './telemetry/sync'
 import { buildTimeline, type Extras } from './telemetry/timeline'
 import { fetchAltitudeOffset, fetchWeather } from './telemetry/openmeteo'
@@ -16,13 +17,6 @@ type Status =
   | { kind: 'ready' }
   | { kind: 'exporting'; progress: number }
   | { kind: 'error'; message: string }
-
-interface Log {
-  name: string
-  table: LogTable
-  mapping: Mapping
-  telemetry: Telemetry
-}
 
 const MAPPED: { key: 'time' | Channel; label: string }[] = [
   { key: 'time', label: 'Time' },
@@ -50,9 +44,9 @@ export default function App() {
   const [file, setFile] = useState<File>()
   const [url, setUrl] = useState<string>()
   const [gopro, setGopro] = useState<Telemetry>()
-  const [log, setLog] = useState<Log>()
+  const [log, setLog] = useState<LoadedLog>()
   const [offset, setOffset] = useState(0)
-  const [sync, setSync] = useState<SyncResult>()
+  const [sync, setSync] = useState<SyncResult & { method: 'speed' | 'clock' }>()
   const [unit, setUnit] = useState<SpeedUnit>('mph')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [fetched, setFetched] = useState<{ source: Telemetry; extras: Extras }>()
@@ -87,10 +81,23 @@ export default function App() {
   }, [unit, timeline, available, hidden])
 
 
+  /**
+   * Lines the log up with the video by matching speed. When that fails or is
+   * weak, falls back to the two clocks if both files carry real times.
+   */
   function autoSync(video: Telemetry | undefined, logTelemetry: Telemetry) {
-    const result = video ? findOffset(video, logTelemetry) : undefined
-    setSync(result)
-    if (result) setOffset(result.offset)
+    const bySpeed = video ? findOffset(video, logTelemetry) : undefined
+    if (bySpeed && bySpeed.score >= GOOD_SYNC) {
+      setSync({ ...bySpeed, method: 'speed' })
+      setOffset(bySpeed.offset)
+    } else if (video?.startTime !== undefined && logTelemetry.startTime !== undefined) {
+      const offset = round1(logTelemetry.startTime - video.startTime)
+      setSync({ offset, score: 1, method: 'clock' })
+      setOffset(offset)
+    } else {
+      setSync(bySpeed && { ...bySpeed, method: 'speed' })
+      if (bySpeed) setOffset(bySpeed.offset)
+    }
   }
 
   async function openVideo(f: File) {
@@ -114,10 +121,10 @@ export default function App() {
   async function openLog(f: File) {
     setStatus({ kind: 'loading', what: 'Reading data log…' })
     try {
-      const { table, mapping, telemetry } = await readCsvTelemetry(f)
-      setLog({ name: f.name, table, mapping, telemetry })
+      const loaded = await readLog(f)
+      setLog(loaded)
       setOffset(0)
-      autoSync(gopro, telemetry)
+      autoSync(gopro, loaded.telemetry)
       setStatus({ kind: 'ready' })
     } catch (e) {
       setStatus({ kind: 'error', message: `Couldn't read ${f.name}: ${String((e as Error).message ?? e)}` })
@@ -125,7 +132,7 @@ export default function App() {
   }
 
   function remap(key: 'time' | Channel, column: number | undefined) {
-    if (!log) return
+    if (!log?.table) return
     const mapping = { ...log.mapping, [key]: column } as Mapping
     const telemetry = toTelemetry(log.table, mapping, log.name)
     setLog({ ...log, mapping, telemetry })
@@ -211,10 +218,10 @@ export default function App() {
           />
         </label>
         <label className="button">
-          {log ? 'Change data log' : 'Add OBD / data log (CSV)'}
+          {log ? 'Change data log' : 'Add data log (OBD CSV, GPX, FIT)'}
           <input
             type="file"
-            accept=".csv,.txt,text/csv"
+            accept=".csv,.txt,.gpx,.fit,text/csv"
             hidden
             disabled={busy}
             onChange={(e) => e.target.files?.[0] && openLog(e.target.files[0])}
@@ -271,32 +278,35 @@ export default function App() {
           <h2>{log.name}</h2>
           <p className="muted">
             {log.telemetry.samples.length.toLocaleString()} readings over{' '}
-            {formatDuration(log.telemetry.samples.at(-1)?.t ?? 0)}. Check the columns below match your data.
+            {formatDuration(log.telemetry.samples.at(-1)?.t ?? 0)}.{log.table && ' Check the columns below match your data.'}
           </p>
-          <div className="mapping">
-            {MAPPED.map(({ key, label }) => (
-              <label key={key}>
-                {label}
-                <select
-                  value={log.mapping[key] ?? ''}
-                  onChange={(e) => remap(key, e.target.value === '' ? undefined : Number(e.target.value))}
-                >
-                  {key !== 'time' && <option value="">None</option>}
-                  {log.table.headers.map((h, i) => (
-                    <option key={i} value={i}>
-                      {h || `Column ${i + 1}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
+          {log.table && log.mapping && (
+            <div className="mapping">
+              {MAPPED.map(({ key, label }) => (
+                <label key={key}>
+                  {label}
+                  <select
+                    value={log.mapping![key] ?? ''}
+                    onChange={(e) => remap(key, e.target.value === '' ? undefined : Number(e.target.value))}
+                  >
+                    {key !== 'time' && <option value="">None</option>}
+                    {log.table!.headers.map((h, i) => (
+                      <option key={i} value={i}>
+                        {h || `Column ${i + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          )}
 
           <h3>Sync</h3>
           <p className="muted">
-            {sync && sync.score >= GOOD_SYNC &&
+            {sync?.method === 'clock' && 'Lined up using the times recorded in both files.'}
+            {sync?.method === 'speed' && sync.score >= GOOD_SYNC &&
               `Lined up automatically by matching speed (match ${Math.round(sync.score * 100)}%).`}
-            {sync && sync.score < GOOD_SYNC &&
+            {sync?.method === 'speed' && sync.score < GOOD_SYNC &&
               `Best automatic match is weak (${Math.round(sync.score * 100)}%). Check the overlay against the video and adjust.`}
             {!sync && (gopro
               ? 'Couldn’t match the speed traces automatically. Set the offset by hand.'
@@ -322,7 +332,7 @@ export default function App() {
           </div>
           {style.pedals.brake && style.pedals.brakeEstimated && (
             <p className="muted">
-              Your log has no brake data (most cars don’t report it over OBD-II), so braking is estimated from how fast you slow down.
+              Your log has no brake data (most cars don’t report it over OBD-II), so braking is estimated from how quickly you slow down.
             </p>
           )}
         </section>
