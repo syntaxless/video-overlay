@@ -13,6 +13,8 @@ Add live data overlays (speed now; throttle, brake, RPM, elevation, weather and 
 - Live preview with a speedometer (mph or km/h), RPM, and throttle and brake bars. Most cars don't report brake over OBD-II, so when the log has no brake column, braking is estimated from how quickly you slow down (marked "est.").
 - Export an MP4 with the overlay burned in. Audio is kept. In Chrome and Edge the file is written straight to disk, so long 4K clips don't need to fit in memory.
 
+**Try it:** https://syntaxless.github.io/video-overlay/ (deployed from `main` on every merge).
+
 Best in Chrome or Edge. Other browsers may lack the video encoding support it needs.
 
 ## Development
