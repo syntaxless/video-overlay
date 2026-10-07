@@ -24,6 +24,8 @@ export interface SpeedStyle {
 const MPS_TO: Record<SpeedUnit, number> = { mph: 2.2369363, kmh: 3.6 }
 const LABEL: Record<SpeedUnit, string> = { mph: 'MPH', kmh: 'KM/H' }
 
+const BLUE = '#3b9cff'
+
 const START = Math.PI * 0.75
 const SWEEP = Math.PI * 1.5
 
@@ -69,7 +71,7 @@ function drawArc(ctx: Ctx, u: number, height: number, text: string, fraction: nu
   if (fraction > 0) {
     ctx.beginPath()
     ctx.arc(cx, cy, r, START, START + SWEEP * fraction)
-    ctx.strokeStyle = ACCENT
+    ctx.strokeStyle = BLUE
     ctx.stroke()
   }
 
@@ -144,14 +146,14 @@ function drawDial(ctx: Ctx, u: number, height: number, text: string, fraction: n
   ctx.lineTo(cx - ny * half - nx * tail, cy + nx * half - ny * tail)
   ctx.lineTo(cx + ny * half - nx * tail, cy - nx * half - ny * tail)
   ctx.closePath()
-  ctx.fillStyle = '#ff4d3d'
+  ctx.fillStyle = BLUE
   ctx.fill()
   ctx.beginPath()
   ctx.arc(cx, cy, 11 * u, 0, Math.PI * 2)
   ctx.fillStyle = '#1b1e24'
   ctx.fill()
   ctx.lineWidth = 3 * u
-  ctx.strokeStyle = '#ff4d3d'
+  ctx.strokeStyle = BLUE
   ctx.stroke()
 }
 
@@ -176,7 +178,7 @@ function drawDigital(ctx: Ctx, u: number, height: number, text: string, fraction
   const numRight = x + w - 92 * u
   ctx.fillText(text, numRight, y + 102 * u)
   ctx.textAlign = 'left'
-  ctx.fillStyle = ACCENT
+  ctx.fillStyle = BLUE
   ctx.font = `700 ${24 * u}px ${FONT}`
   ctx.fillText(LABEL[style.unit], numRight + 12 * u, y + 102 * u)
 
