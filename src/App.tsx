@@ -7,7 +7,7 @@ import { buildTimeline, type Extras } from './telemetry/timeline'
 import { fetchAltitudeOffset, fetchWeather } from './telemetry/openmeteo'
 import type { Channel, Telemetry } from './telemetry/types'
 import { availableWidgets, defaultPedals, drawOverlay, type OverlayStyle, type Widgets } from './overlay/overlay'
-import type { SpeedUnit } from './overlay/speed'
+import { SPEED_LOOKS, type SpeedLook, type SpeedUnit } from './overlay/speed'
 
 const MAX_SPEED: Record<SpeedUnit, number> = { mph: 140, kmh: 220 }
 
@@ -48,6 +48,7 @@ export default function App() {
   const [offset, setOffset] = useState(0)
   const [sync, setSync] = useState<SyncResult & { method: 'speed' | 'clock' }>()
   const [unit, setUnit] = useState<SpeedUnit>('mph')
+  const [look, setLook] = useState<SpeedLook>('arc')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [fetched, setFetched] = useState<{ source: Telemetry; extras: Extras }>()
   const [hidden, setHidden] = useState<Set<keyof Widgets>>(new Set())
@@ -77,8 +78,8 @@ export default function App() {
   const style: OverlayStyle = useMemo(() => {
     const widgets = { ...available }
     for (const k of hidden) widgets[k] = false
-    return { speed: { unit, max: MAX_SPEED[unit] }, pedals: defaultPedals(timeline), widgets }
-  }, [unit, timeline, available, hidden])
+    return { speed: { unit, max: MAX_SPEED[unit], look }, pedals: defaultPedals(timeline), widgets }
+  }, [unit, look, timeline, available, hidden])
 
 
   /**
@@ -270,6 +271,13 @@ export default function App() {
               {label}
             </label>
           ))}
+          <div className="segmented" role="group" aria-label="Speed style">
+            {SPEED_LOOKS.map(({ key, label }) => (
+              <button key={key} aria-pressed={look === key} disabled={!style.widgets.speed} onClick={() => setLook(key)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </section>
       )}
 
