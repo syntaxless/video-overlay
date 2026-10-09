@@ -115,13 +115,16 @@ function mix(a: string, b: string, f: number): string {
   return `rgb(${ch(1)}, ${ch(3)}, ${ch(5)})`
 }
 
+/** Side of the square speed panel at 1080p. The pedal panel matches its height. */
+const SPEED_BOX = 276
+
 const MPS_TO = { mph: 2.2369363, kmh: 3.6 }
 const UNIT_LABEL = { mph: 'MPH', kmh: 'KM/H' }
 
 /** Speed as a ring of neon segments with a sunset-gradient number, bottom-left. */
 export function drawRetroSpeed(ctx: Ctx, height: number, sample: Sample | undefined, style: SpeedStyle) {
   const u = height / 1080
-  const size = 276 * u
+  const size = SPEED_BOX * u
   const x = 42 * u
   const y = height - 42 * u - size
   const speed = sample?.speed !== undefined ? sample.speed * MPS_TO[style.unit] : undefined
@@ -208,10 +211,11 @@ export function drawRetroPedals(ctx: Ctx, height: number, sample: Sample | undef
   const barW = 34 * u
   const gap = 22 * u
   const pad = 22 * u
-  const barH = 190 * u
   const rpmH = opts.rpm ? 56 * u : 0
+  // Same height as the speed panel so the two sit flush as one block.
+  const panelH = SPEED_BOX * u
+  const barH = panelH - rpmH - 70 * u
   const width = Math.max(bars.length * barW + (bars.length - 1) * gap + pad * 2, opts.rpm ? 160 * u : 0)
-  const panelH = barH + rpmH + 70 * u
   const x = 340 * u
   const y = height - 42 * u - panelH
 
@@ -230,7 +234,7 @@ export function drawRetroPedals(ctx: Ctx, height: number, sample: Sample | undef
     ctx.fillText('RPM', x + width / 2, y + 68 * u)
   }
 
-  const segments = 16
+  const segments = 12
   const segGap = 4 * u
   const segH = (barH - segGap * (segments - 1)) / segments
   const barsW = bars.length * barW + (bars.length - 1) * gap
