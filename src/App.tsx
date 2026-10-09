@@ -6,7 +6,8 @@ import { findOffset, type SyncResult } from './telemetry/sync'
 import { buildTimeline, type Extras } from './telemetry/timeline'
 import { fetchAltitudeOffset, fetchWeather } from './telemetry/openmeteo'
 import type { Channel, Telemetry } from './telemetry/types'
-import { availableWidgets, defaultPedals, drawOverlay, type OverlayStyle, type Widgets } from './overlay/overlay'
+import { availableWidgets, defaultPedals, drawOverlay, THEMES, type OverlayStyle, type OverlayTheme, type Widgets } from './overlay/overlay'
+import { loadRetroFonts } from './overlay/retro'
 import { SPEED_LOOKS, type SpeedLook, type SpeedUnit } from './overlay/speed'
 
 const MAX_SPEED: Record<SpeedUnit, number> = { mph: 140, kmh: 220 }
@@ -49,6 +50,8 @@ export default function App() {
   const [sync, setSync] = useState<SyncResult & { method: 'speed' | 'clock' }>()
   const [unit, setUnit] = useState<SpeedUnit>('mph')
   const [look, setLook] = useState<SpeedLook>('arc')
+  const [theme, setTheme] = useState<OverlayTheme>('standard')
+  const [retroFonts, setRetroFonts] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [fetched, setFetched] = useState<{ source: Telemetry; extras: Extras }>()
   const [hidden, setHidden] = useState<Set<keyof Widgets>>(new Set())
@@ -78,8 +81,16 @@ export default function App() {
   const style: OverlayStyle = useMemo(() => {
     const widgets = { ...available }
     for (const k of hidden) widgets[k] = false
-    return { speed: { unit, max: MAX_SPEED[unit], look }, pedals: defaultPedals(timeline), widgets }
-  }, [unit, look, timeline, available, hidden])
+    // Retro HUD waits for its fonts so neither the preview nor the export draws with fallbacks.
+    const shown = theme === 'retro' && !retroFonts ? 'standard' : theme
+    return { theme: shown, speed: { unit, max: MAX_SPEED[unit], look }, pedals: defaultPedals(timeline), widgets }
+  }, [unit, look, theme, retroFonts, timeline, available, hidden])
+
+  useEffect(() => {
+    if (theme !== 'retro' || retroFonts) return
+    const done = () => setRetroFonts(true)
+    loadRetroFonts().then(done, done)
+  }, [theme, retroFonts])
 
 
   /**
@@ -271,9 +282,22 @@ export default function App() {
               {label}
             </label>
           ))}
+          <div className="segmented" role="group" aria-label="Overlay theme">
+            {THEMES.map(({ key, label }) => (
+              <button key={key} aria-pressed={theme === key} onClick={() => setTheme(key)}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="segmented" role="group" aria-label="Speed style">
             {SPEED_LOOKS.map(({ key, label }) => (
-              <button key={key} aria-pressed={look === key} disabled={!style.widgets.speed} onClick={() => setLook(key)}>
+              <button
+                key={key}
+                aria-pressed={look === key}
+                disabled={!style.widgets.speed || theme === 'retro'}
+                title={theme === 'retro' ? 'Retro HUD has its own speed gauge' : undefined}
+                onClick={() => setLook(key)}
+              >
                 {label}
               </button>
             ))}

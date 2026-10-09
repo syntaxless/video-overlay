@@ -1,7 +1,7 @@
 import type { Telemetry } from '../telemetry/types'
 import { ACCENT, decimate, indexAt, panel, type Ctx } from './common'
 
-interface Projected {
+export interface Projected {
   times: Float64Array
   /** Positions scaled to 0..1 inside the map box, y down. */
   xs: Float64Array
@@ -14,7 +14,7 @@ interface Projected {
 const cache = new WeakMap<Telemetry, Projected>()
 
 /** Projects the route once (flat-earth is fine at road-trip scale) and caches it. */
-function project(route: Telemetry): Projected | undefined {
+export function project(route: Telemetry): Projected | undefined {
   const hit = cache.get(route)
   if (hit) return hit
   const s = decimate(route.samples.filter((x) => x.lat !== undefined && x.lon !== undefined), 2000)

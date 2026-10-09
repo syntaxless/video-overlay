@@ -1,7 +1,7 @@
 import type { Telemetry } from '../telemetry/types'
 import { ACCENT, FONT, decimate, indexAt, panel, type Ctx, type Units } from './common'
 
-interface Profile {
+export interface Profile {
   times: Float64Array
   alts: Float64Array
   min: number
@@ -10,7 +10,7 @@ interface Profile {
 
 const cache = new WeakMap<Telemetry, Profile>()
 
-function profile(route: Telemetry): Profile | undefined {
+export function profile(route: Telemetry): Profile | undefined {
   const hit = cache.get(route)
   if (hit) return hit
   const s = decimate(route.samples.filter((x) => x.alt !== undefined), 600)
@@ -21,7 +21,7 @@ function profile(route: Telemetry): Profile | undefined {
   return out
 }
 
-const M_TO_FT = 3.28084
+export const M_TO_FT = 3.28084
 
 /** Draws current elevation and the drive's elevation profile in the bottom-right corner. */
 export function drawElevation(ctx: Ctx, width: number, height: number, route: Telemetry, alt: number | undefined, t: number, units: Units) {
